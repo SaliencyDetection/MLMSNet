@@ -1,466 +1,300 @@
-import torch
-from data_edge import *
-from torch import nn
-from torch.nn import init
-import torch.nn.functional as F
-from torch.autograd import Variable
-from config import *
+from mlm_model import *
+from collections import OrderedDict
+from data_mlm import  *
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
-# vgg choice
-base = {'dss': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M']}
-# extend vgg choice --- follow the paper, you can change it
-extra = {'dss': [(64, 128, 3, [8, 16, 32, 64]), (128, 128, 3, [4, 8, 16, 32]), (256, 256, 5, [8, 16]),
-                 (512, 256, 5, [4, 8]), (512, 512, 5, []), (512, 512, 7, [])]}
 
 
+def process_data_dir(data_dir):
+    files = os.listdir(data_dir)
+    files = map(lambda x: os.path.join(data_dir, x), files)
+    return sorted(files)
+TR_sal_dirs = [   ("/home/archer/Downloads/datasets/DUTS/DUT-train/DUT-train-Image",
+        "/home/archer/Downloads/datasets/DUTS/DUT-train/DUT-train-Mask"),
+        ]
+TR_ed_dir = [("./images/train2",
+           "./bon/train2")]
 
+TE_sal_dirs = [("/home/archer/Downloads/datasets/ECSSD/ECSSD-Image",
+              "/home/archer/Downloads/datasets/ECSSD/ECSSD-Mask")
 
+               ]
 
+TE_ed_dir = [("./images/test",
+           "./bon/test")]
 
 
 
-# vgg16
-def vgg(cfg, i, batch_norm=False):
-    layers = []
-    in_channels = i
-    for v in cfg:
-        if v == 'M':
-            layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
-        else:
-            conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
-            if batch_norm:
-                layers += [conv2d, nn.BatchNorm2d(v), nn.ReLU(inplace=True)]
-            else:
-                layers += [conv2d, nn.ReLU(inplace=True)]
-            in_channels = v
-    return layers
+def DATA(sal_dirs,ed_dir,trainable):
 
 
+    S_IMG_FILES = []
+    S_GT_FILES = []
 
+    E_IMG_FILES = []
+    E_GT_FILES = []
 
-# extend vgg: side outputs
-class FeatLayer(nn.Module):
-    def __init__(self, in_channel, channel, k):
 
-        super(FeatLayer, self).__init__()
-        #print("side out:", "k",k)
-        self.main = nn.Sequential(nn.Conv2d(in_channel, channel, k, 1, k // 2), nn.ReLU(inplace=True),
-                                  nn.Conv2d(channel, channel, k, 1, k // 2,dilation=1), nn.ReLU(inplace=True),
-                                  nn.Dropout()
-                                  )
+    for dir_pair in sal_dirs:
+        X, y = process_data_dir(dir_pair[0]), process_data_dir(dir_pair[1])
+        S_IMG_FILES.extend(X)
+        S_GT_FILES.extend(y)
 
-        self.o =nn.Conv2d(channel, 1, 1, 1)
-        self.o2 = nn.Conv2d(channel, 1, 1, 1)
-        #self.o3 = nn.Conv2d(channel, 1, 1, 1)
+    for dir_pair in ed_dir:
+        X, y = process_data_dir(dir_pair[0]), process_data_dir(dir_pair[1])
+        E_IMG_FILES.extend(X)
+        E_GT_FILES.extend(y)
 
-    def forward(self, x):
-        y=self.main(x)
-        y1 = self.o(y)
-        y2=self.o2(y)
-        #y3 = self.o3(y)
+    S_IMGS_train, S_GT_train = S_IMG_FILES, S_GT_FILES
+    E_IMGS_train, E_GT_train = E_IMG_FILES, E_GT_FILES
 
-        return (y,y1,y2)
+    folder = DataFolder(S_IMGS_train, S_GT_train, E_IMGS_train, E_GT_train, trainable)
 
+    if trainable:
+        data = DataLoader(folder, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, shuffle=trainable)
+    else:
+        data = DataLoader(folder, batch_size=1, num_workers=NUM_WORKERS, shuffle=trainable)
 
+    return data
 
 
+train_data = DATA(TR_sal_dirs,TR_ed_dir,trainable=True)
 
+test_data =  DATA(TE_sal_dirs,TE_ed_dir,trainable=False)
 
 
+def MLMLoss(m0,m1,m2):
+    l=0
+    for i in range(len(m0)):
+        l += torch.nn.MSELoss(m0[i],m1[i])+torch.nn.MSELoss(m2[i],m1[i])+torch.nn.MSELoss(m0[i],m2[i])
 
+    return l
 
 
 
-class FeatLayer_ed(nn.Module):
-    def __init__(self, in_channel, channel, k):
 
-        super(FeatLayer_ed, self).__init__()
-        #print("side out:", "k",k)
-        self.main = nn.Sequential(nn.Conv2d(in_channel, channel, k, 1, k // 2), nn.ReLU(inplace=True),
+def load(path):
+    state_dict = torch.load(path)
+    state_dict_rename =  OrderedDict()
+    for k, v in state_dict.items():
+        name = k[7:]  # remove `module.`
+        state_dict_rename[name] = v
+    #print(state_dict_rename)
+    #model.load_state_dict(state_dict_rename)
 
-                                  )
+    return state_dict_rename
 
-        self.ed1 = nn.Sequential(nn.Conv2d(channel+1,1,1,1),nn.ReLU(inplace=True))
-        self.ed2 = nn.Sequential(nn.Conv2d(channel, 1, 1, 1), nn.ReLU(inplace=True))
-        #self.conv2 = nn.Sequential(nn.Conv2d(channel,channel))
-        self.main3 =nn.Sequential(nn.Conv2d(channel, channel-1, k, 1, k // 2), nn.ReLU(inplace=True),
-                                  nn.Dropout())
-        self.o =nn.Conv2d(channel, 1, 1, 1)
-        self.o2 = nn.Conv2d(channel, 1, 1, 1)
 
+D_E = DSS(*extra_layer(vgg(base['dss'], 3), extra['dss'],),e_extract_layer()).cuda()
+U = D_U().cuda()
+#D_E_dict = D_E_1.state_dict()
+#pre_dict = load('./checkpoints/edges/D_E15epoch23.pkl')
+#pre_dict = {k:v for k,v in pre_dict.items() if k in D_E_dict}
+#D_E_dict.update(pre_dict)
+#D_E.load_state_dict(D_E_dict)
 
-    def forward(self, x,ed):
-        y1=self.main(x)
-        E1 =self.ed1(torch.cat([y1,ed],1))#NN channel
-        y2 = self.main3(y1)
-        E = self.ed2(torch.cat([y2,E1],1))
-        y  = torch.cat([y2,E],1)
+initialize_weights(D_E)
+initialize_weights(U)
+D_E.base.load_state_dict(torch.load('./weights/vgg16_feat.pth'))
+#U.load_state_dict(load('./checkpoints/edges/U15epoch23.pkl'))
+D_E = nn.DataParallel(D_E).cuda()
 
+U = nn.DataParallel(U).cuda()
 
 
-        y1 = self.o(y)
-        y2=self.o2(y)
+DE_optimizer =  optim.Adam(D_E.parameters(), lr=config.D_LEARNING_RATE,betas=(0.9,0.999))
+#DE_optimizer.load_state_dict(
+#    torch.load('/media/archer/Data1/coder/checkpoints/edges/DEoptimizer23.pkl'))
 
+U_optimizer =  optim.Adam(U.parameters(), lr=config.U_LEARNING_RATE, betas=(0.9, 0.999))
+#U_optimizer.load_state_dict(
+#   torch.load('/media/archer/Data1/coder/checkpoints/edges/Uoptimizer23.pkl'))
 
-        return (y,y1,y2)
+#RE = refine_net().cuda()
+#initialize_weights(RE)
+#RE.load_state_dict(load('./checkpoints/edges/RE2epoch21.pkl'))
+#RE = nn.DataParallel(RE).cuda()
+#RE_optimizer =  optim.Adam(RE.parameters(), lr=config.RE_LEARNING_RATE,betas=(0.9,0.999))
+#RE_optimizer.load_state_dict(torch.load('./checkpoints/edges/RE2optimizer21.pkl'))
 
-class Edge_featlayer_2(nn.Module):
-    def __init__(self,in_channel,channel):
-        super(Edge_featlayer_2,self).__init__()
-        self.conv1 = nn.Sequential(nn.Conv2d(in_channel,channel,1,1),nn.ReLU(inplace=True))
-        self.conv2 = nn.Sequential(nn.Conv2d(in_channel,channel,1,1),nn.ReLU(inplace=True),nn.Conv2d(channel,channel,1,1,dilation=1),nn.ReLU(inplace=True))
-        self.merge = nn.Conv2d(2*channel,1,1)
+dd = True
+uu = True
 
-    def forward(self, x1,x2):
-        y1 = self.conv1(x1)
-        y2 = self.conv2(x2)
-        y3 = torch.cat([y1,y2],1)
-        y3 = self.merge(y3)
+nn =True
+mes =[100,10000,1]
+meE_de_l1=[10,1000,1]
 
-        del y1,y2
 
-        return y3
 
 
-class Edge_featlayer_3(nn.Module):
-    def __init__(self,in_channel,channel):
-        super(Edge_featlayer_3,self).__init__()
-        self.conv1 = nn.Sequential(nn.Conv2d(in_channel, channel, 1, 1), nn.ReLU(inplace=True))
-        self.conv2 = nn.Sequential(nn.Conv2d(in_channel, channel, 1, 1),nn.ReLU(inplace=True))
-        self.conv3 = nn.Sequential(nn.Conv2d(in_channel,channel,1,1),nn.ReLU(inplace=True),nn.Conv2d(channel,channel,1,1),nn.ReLU(inplace=True))
-        self.merge = nn.Conv2d(3 * channel, 1, 1)
 
-    def forward(self, x1, x2,x3):
-        y1 = self.conv1(x1)
-        y2 = self.conv2(x2)
-        y3 = self.conv3(x3)
+def cal_DLoss(m,e,PRE_E,SAL_E,label_batch,E_Lable,w_s_m,w_s_e,w_e,labels):
 
-        y3 = torch.cat([y1, y2,y3], 1)
-        y3 = self.merge(y3)
+    D_masks_loss = 0
+    D_edges_loss = 0
+    D_MLM_loss = 0
+    D_sal_edges_loss =0
 
-        del y1, y2
+    for i in range(6):
 
-        return y3
+        if i<3:
+            D_masks_loss =D_masks_loss + F.binary_cross_entropy(m[3+i], labels[i+1].cuda())
 
+            D_sal_edges_loss =D_sal_edges_loss+ F.binary_cross_entropy(e[i], SAL_E)
+            D_edges_loss = D_edges_loss +F.binary_cross_entropy(PRE_E[i],E_Lable)
 
-def e_extract_layer():
-    e_feat_layers = []
-    e_feat_layers += [Edge_featlayer_2(64,21)]
-    e_feat_layers += [Edge_featlayer_2(128,21)]
-    e_feat_layers += [Edge_featlayer_3(256,21)]
-    e_feat_layers += [Edge_featlayer_3(512,21)]
-    e_feat_layers += [Edge_featlayer_3(512,21)]
+        if i==3:
+            D_edges_loss = D_edges_loss + 3*F.binary_cross_entropy(PRE_E[i], E_Lable)
 
-    return e_feat_layers
+    return ( D_masks_loss,D_sal_edges_loss, D_edges_loss)
 
 
-def extra_layer(vgg, cfg):
-    feat_layers, concat_layers, concat_layers_2, scale = [], [],[], 1
+x = 0
+ma = 0
+for epoch in range(1, config.NUM_EPOCHS + 1):
+    sum_train_mae = 0
+    sum_train_loss = 0
+    sum_train_gan = 0
+    ##train
 
-    for k, v in enumerate(cfg):
-        #print("k:", k)
-        if k%2==1:
+    for iter_cnt,(img,img_e,sal_l,sal_e,ed_l,s_ln,w_e,w_s_e,w_s_m,labels,e_labels,e_n) in enumerate(train_data):
+      #  D_E.eval()
+      #  U.eval()
+        x = x + 1
 
-            feat_layers += [FeatLayer(v[0], v[1], v[2])]
-        else:
-            feat_layers +=[FeatLayer_ed(v[0],v[1],v[2])]
+        label_batch = Variable(sal_l,requires_grad =False).cuda()
 
+        print('training start!!')
 
-        scale *= 2
+        img_batch = Variable(img,requires_grad=False).cuda()  # ,Variable(z_.cuda())
+        SAL_E = Variable(sal_e,requires_grad=False).cuda()
+        E_Lable = Variable(ed_l, requires_grad=False).cuda()
+        for i in labels:
+            i = Variable(i,requires_grad=False).cuda()
 
+        for i in range(len(e_labels)):
+            e_labels[i]=Variable(e_labels[i],requires_grad=False).cuda()
 
-    return vgg, feat_layers
 
+        if dd == True:
+            ##fake
+            f, m, e ,PRE_E,mlml_1,mlm_2= D_E(img_batch,img_e)
+            
+            masks_L ,sal_edges_l,E_LOSS= cal_DLoss(m,e,PRE_E,SAL_E,label_batch,E_Lable,w_s_m.cuda(),w_s_e.cuda(),w_e.cuda(),labels)
+          #  MLM_loss = cal_MLMloss(m,mlm_1,mlm_2)
+            print('sal_edgeL:',float(sal_edges_l),'maps_l',float(masks_L),'ED_L',float(E_LOSS))
 
+            #### mutual learning process
 
-class DeconvBlock(torch.nn.Module):
-    def __init__(self, input_size, output_size, kernel_size=4, stride=2, padding=1, batch_norm=False, dropout=False):
-        super(DeconvBlock, self).__init__()
-        self.deconv = torch.nn.ConvTranspose2d(input_size, output_size, kernel_size, stride, padding)
-        self.bn = torch.nn.BatchNorm2d(output_size)
-        self.drop = torch.nn.Dropout(0.2)
-        self.relu = torch.nn.ReLU(True)
-        self.batch_norm = batch_norm
-        self.dropout = dropout
+            #update m
+            loss_0 = F.binary_cross_entropy(m[0], labels[2].cuda())+ F.binary_cross_entropy(m[1], labels[0].cuda())+F.binary_cross_entropy(m[2], label_batch)
+            loss_0.backward()
+            DE_optimizer.step()
 
-    def forward(self, x):
-        if self.batch_norm:
-            out = self.bn(self.deconv(self.relu(x)))
-        else:
-            out = self.deconv(self.relu(x))
+            f, m, e ,PRE_E,mlml_1,mlm_2= D_E(img_batch,img_e)
+#            masks_L ,sal_edges_l,E_LOSS= cal_DLoss(m,e,PRE_E,SAL_E,label_batch,E_Lable,w_s_m.cuda(),w_s_e.cuda(),w_e.cuda(),labels)
 
-        if self.dropout:
-            return self.drop(out)
-        else:
-            return out
+            #update m1
+            loss_1 = F.binary_cross_entropy(mlm_1[0], m[0])+ F.binary_cross_entropy(mlm_1[1], m[1])+F.binary_cross_entropy(mlm_1[2], m[2])
+            loss_1.backward()
+            DE_optimizer.step()
+            DE_optimizer.zero_grad()
+            f, m, e ,PRE_E,mlml_1,mlm_2= D_E(img_batch,img_e)
 
+          #  masks_L ,sal_edges_l,E_LOSS= cal_DLoss(m,e,PRE_E,SAL_E,label_batch,E_Lable,w_s_m.cuda(),w_s_e.cuda(),w_e.cuda(),labels)
 
-class D_U(nn.ModuleList):
-    def __init__(self):
-        super(D_U,self).__init__()
-        #self.up = []
+            #update m2
+            loss_2 = F.binary_cross_entropy(mlm_2[0], m[0])+ F.binary_cross_entropy(mlm_2[1], m[1])+F.binary_cross_entropy(mlm_2[2], m[2])
+            loss_2.backward()
+            DE_optimizer.step()
 
+            DE_optimizer.zero_grad()
 
-        self.conv6 = DeconvBlock(input_size=512,output_size=512,batch_norm=True)
-        #self.conv5 = DeconvBlock(input_size=512,output_size=256,batch_norm=True)
-        self.extract0 = nn.ConvTranspose2d(1024, 1,  1,1)
+            f, m, e ,PRE_E,mlml_1,mlm_2= D_E(img_batch,img_e)
+            DE_l_1 = 10*masks_L+10*sal_edges_l+10*E_LOSS
+            DE_l_1.backward()
+            DE_optimizer.step()
 
 
-        self.up0=DeconvBlock(input_size=1024,output_size=256,batch_norm=True)
-        self.up1=DeconvBlock(input_size=512, output_size=256, batch_norm=True)
-        self.up2=DeconvBlock(input_size=512,output_size=128,batch_norm=True)
-        self.up3=DeconvBlock(input_size=256,output_size=128,batch_norm=True)
+        if nn== True:
+            f, m, e,PRE_E = D_E(img_batch,img_e)
 
-        #self.extract0 =nn.Conv2d(1024, 1, 1,1)
+            masks, es,li_f = U(f)
 
-        self.extract1 =nn.Conv2d(256, 1, 1,1)
-        self.extract2 = nn.Conv2d(256, 1,1,1)
-        self.extract3 =nn.Conv2d(128, 1, 1, 1)
-        self.extract4 = nn.Conv2d(128,1,1,1)
-        self.extract_f_e = nn.Conv2d(256,1,1,1)
-        self.extract_f_m = nn.Conv2d(256, 1, 1, 1)
+            pre_es_l = 0
+            ma = torch.abs(label_batch - masks[3]).mean()
+            pre_m_l = F.binary_cross_entropy(masks[3], label_batch)
 
-    def forward(self, features):
-        mask,e,f = [],[],[]
-        x0 = self.conv6(features[5])
-        f.append(self.extract0(torch.cat([x0,features[4]],1)))
-        mask.append(nn.Sigmoid()(f[0]))
-        x1 = self.up0(torch.cat([x0,features[4]],1))
-        f.append(self.extract1(x1))
+            pre_ms_l_16= F.binary_cross_entropy(masks[0], labels[2].cuda())
+            pre_ms_l_64 = F.binary_cross_entropy(masks[1], labels[0].cuda())
+            pre_ms_l_256 = F.binary_cross_entropy(masks[2], label_batch)
 
-        e.append(nn.Sigmoid()(f[1]))
+            for i in range(2):
+                pre_es_l += F.binary_cross_entropy(es[i],e_labels[i])
+            pre_e_l = F.binary_cross_entropy(es[2],SAL_E)
 
-        x2 = self.up1(torch.cat([features[3],x1],1))
-        f.append(self.extract2(x2))
-        mask.append(nn.Sigmoid()(f[2]))
-        x3 = self.up2(torch.cat([features[2],x2],1))
-        f.append(self.extract3(x3))
-        e.append(nn.Sigmoid()(f[3]))
-        x4 = self.up3(torch.cat([features[1],x3],1))
-        mask.append(nn.Sigmoid()(self.extract4(x4)))
-        #f.append(self.extract_f_e(torch.cat([features[0],x4],1)))
-        e.append(nn.Sigmoid()(self.extract_f_e(torch.cat([features[0],x4],1))))
-        f.append(self.extract_f_m(torch.cat([features[0], x4], 1)))
-        mask.append(nn.Sigmoid()(f[4]))
+            DE_optimizer.zero_grad()
+            DE_l_1 = 100*pre_m_l+100*pre_e_l+100*pre_ms_l_16+100*pre_ms_l_64+100*pre_es_l+100*pre_ms_l_256
 
-        return mask,e,f
 
+            DE_l_1.backward()
+            DE_optimizer.step()
 
-# DSS network
-class DSS(nn.Module):
-    def __init__(self, base, feat_layers,e_feat_layers):
-        super(DSS, self).__init__()
-        self.extract = [3, 8, 15, 22, 29]
-        self.e_extract = [1,3,6,8,11,13,15,18,20,22,25,27,29]
 
+        if iter_cnt%100 ==0:
+            torch.save(D_E.state_dict(), './checkpoints/edges/D_E20epoch%d.pkl' % epoch)
+            torch.save(U.state_dict(), './checkpoints/edges/U20epoch%d.pkl' % epoch)
 
-        #print('------connect',connect)
-        #self.n=nums
-        self.base = nn.ModuleList(base)
-        self.feat = nn.ModuleList(feat_layers)
-        self.feat_1 = nn.ModuleList(feat_layers)
-        self.feat_2 = nn.ModuleList(feat_layers)
-        self.e_feat = nn.ModuleList(e_feat_layers)
+            print('model saved')
 
 
-        self.up_e =nn.ModuleList()
-        self.up_sal  = nn.ModuleList()
-        self.up_sal_e =nn.ModuleList()
+        sum_train_mae += float(ma)
 
-        self.up_e.append(nn.Conv2d(1,1,1))
-        self.up_sal.append(nn.Conv2d(1, 1, 1))
-        self.up_sal_e.append(nn.Conv2d(1, 1, 1))
+        print("Epoch:{}\t  {}/{}\ \t mae:{}".format(epoch, iter_cnt + 1,len(train_data) ,sum_train_mae / (iter_cnt + 1)))
 
-        self.fuse_e = nn.Conv2d(3,1,1,1)
+    ##########save model
 
-        k = 2
-        k2 = 2
+    torch.save(D_E.state_dict(), './checkpoints/edges/D_E20epoch%d.pkl' % epoch)
+    torch.save(U.state_dict(), './checkpoints/edges/U20epoch%d.pkl'%epoch)
+    torch.save(DE_optimizer.state_dict(),'./checkpoints/edges/DEoptimizer%d.pkl'%epoch)
+    torch.save(U_optimizer.state_dict(), './checkpoints/edges/Uoptimizer%d.pkl'%epoch)
+    #torch.save(RE.state_dict(),'./checkpoints/edges/RE2epoch%d.pkl' % epoch)
+    #torch.save(RE_optimizer.state_dict(), './checkpoints/edges/RE2optimizer%d.pkl' % epoch)
+    print('model saved')
 
-        for i  in range(6):
 
-            self.up_sal_e.append(nn.ConvTranspose2d(1, 1, k2,k2))
-            if i<4:
-                self.up_e.append(nn.ConvTranspose2d(1, 1, k2,k2))
-                #k = 2 * k
-            self.up_sal.append(nn.ConvTranspose2d(1, 1, k2, k2))
-            k2 = 2 * k2
+    eval1 = 0
+    eval2 = 0
+    t_mae = 0
 
+    for iter_cnt, (img,img_e,sal_l,sal_e,ed_l,s_ln,w_e,w_s_e,w_s_m,labels,e_labels,e_n) in enumerate(test_data):
+        D_E.eval()
+        U.eval()
 
+        label_batch = Variable(sal_l).cuda()
 
+        print('val!!')
 
-        self.pool = nn.AvgPool2d(3, 1, 1)
-        self.pool2 =nn.AvgPool2d(3, 1, 1)
+        # for iter, (x_, _) in enumerate(train_data):
 
+        img_batch = Variable(img.cuda())  # ,Variable(z_.cuda())
+        img_e =Variable(img_e.cuda())
 
+        f,y1,y2,PRE_E,mlm_1,mlm_2 = D_E(img_batch,img_e)
+        masks,es,y = U(f)
+        pre_mask = masks[3]
 
-    def forward(self, x, xe):
-        edges,xx1,xx,m,e, prob, y, y1, y2,num =[], [],[],[],[],list(),list(),list(),list(), 0
-        for k in range(len(self.base)):
 
-            x = self.base[k](x)
+        mae_v2 = torch.abs(label_batch - pre_mask).mean().data[0]
 
+        # eval1 += mae_v1
+        eval2 += mae_v2
+        # m_eval1 = eval1 / (iter_cnt + 1)
+        m_eval2 = eval2 / (iter_cnt + 1)
 
-            if k in self.e_extract:
-                xx.append(x)
+    print("test mae", m_eval2)
 
-
-            if k in self.extract:
-                #print(num,'n')
-                if num<2:
-                    edge = self.e_feat[num](xx[2*num],xx[2*num+1])
-                elif num<=4:
-                    edge = self.e_feat[num](xx[num*3-2],xx[num*3-1],xx[num*3])
-
-                if num%2==0 :
-                    (t, t1, t2) = self.feat[num](x,edge)
-                    (t_1, t1_1, t2_1) = self.feat_1[num](x, edge)
-                    (t_2, t1_2, t2_2) = self.feat_2[num](x, edge)
-                else:
-                    (t,t1,t2)=self.feat[num](x)
-                    (t_1, t1_1, t2_1) = self.feat_1[num](x)
-                    (t_2, t1_2, t2_2) = self.feat_2[num](x)
-
-                y.append(t)
-                y1.append(t1)
-
-                y2.append(t2)
-                #y3.append(t3)
-
-                num += 1
-
-        tt,tt1,tt2 = self.feat[num](self.pool(x))
-        tt_1, tt1_1, tt2_1 = self.feat_1[num](self.pool(x))
-        tt_2, tt1_2, tt2_2 = self.feat_2[num](self.pool(x))
-
-        y.append(tt)
-        y1.append(tt1)
-        y2.append(tt2)
-
-        y_1.append(tt_1)
-        y1_1.append(tt1_1)
-        y2_1.append(tt2_1)
-
-        y_2.append(tt_2)
-        y1_2.append(tt1_2)
-        y2_2.append(tt2_2)
-
-        num = 0
-        for k in range(16):
-
-            xe = self.base[k](xe)
-
-            if k in self.e_extract:
-                xx1.append(xe)
-
-            if k in self.extract:
-                # print(num,'n')
-                if num < 2:
-                    edge = self.e_feat[num](xx1[2 * num], xx1[2 * num + 1])
-                elif num <= 4:
-                    edge = self.e_feat[num](xx1[num * 3 - 2], xx1[num * 3 - 1], xx1[num * 3])
-
-                edges.append(edge)
-                num =num+1
-
-                #print('1',edge.shape)
-
-
-        for i in range(6):
-            if i <3:
-                e.append(self.up_sal_e[2*i](y1[2 * i]))
-                e[i] = nn.Sigmoid()(e[i])
-
-                edges[i]=self.up_e[i](edges[i])
-                #print('edge',edges[i].shape)
-
-            #m.append(self.up_sal[i](y2[i]))
-            m.append(y2[i])
-            m_1.append(y2_1[i])
-            m_2.append(y2_2[i])
-            #print(m[i].shape)
-            m[i] = nn.Sigmoid()(m[i])
-
-        edges.append(self.fuse_e(torch.cat([edges[0],edges[1],edges[2]],1)))
-
-        for k in range(len(edges)):
-            edges[k] = nn.Sigmoid()(edges[k])
-
-
-
-
-
-
-
-
-        return (y,m,e,edges,m_1,m_2)
-
-
-
-
-
-
-def initialize_weights(net):
-    for m in net.modules():
-        if isinstance(m, nn.Conv2d):
-            m.weight.data.normal_(0, 0.05)
-            m.bias.data.zero_()
-        elif isinstance(m, nn.ConvTranspose2d):
-            m.weight.data.normal_(0, 0.05)
-            m.bias.data.zero_()
-        elif isinstance(m, nn.Linear):
-            m.weight.data.normal_(0, 0.05)
-            m.bias.data.zero_()
-
-
-class DSE(nn.Module):
-    def __init__(self):
-        super(DSE, self).__init__()
-        self.net = DSS(*extra_layer(vgg(base['dss'], 3), extra['dss'],),e_extract_layer())
-
-    def forward(self, input,e):
-        x = self.net(input,e)
-        return x
-
-
-
-
-if __name__ == '__main__':
-    net = DSE()
-    net.train()
-    net.cuda()
-
-    re =refine_net().cuda()
-
-    net2 = D_U().cuda()
-
-    #print(nete d d                  )
-
-    x = Variable(torch.rand(1,3,256,256)).cuda()
-    xe = Variable(torch.rand(1,3,256,256)).cuda()
-    (out,y1,y2,edges) = net(x,xe)
-    m,e,l= net2(out)
-    xx = re(l)
-    #print(len(e))
-
-
-    print(out[0].size())
-    print(len(out))
-
-    for i in out:
-        print(i.shape)
-
-    for i in y1:
-        print(i.shape)
-
-    for i in y2:
-        print('e',i.shape)
-
-    for i in edges:
-        print('edge',i.shape)
-
-    for i in m:
-        print('mask',i.shape)
-
-    for i in e:
-        print('ed',i)
+    with open('results_with_mlm.txt', 'a+') as f:
+        f.write(str(epoch) + "   2:" + str(m_eval2) + "\n")
