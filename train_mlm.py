@@ -186,9 +186,34 @@ for epoch in range(1, config.NUM_EPOCHS + 1):
             MLM_loss = cal_MLMloss(m,mlm_1,mlm_2)
             print('sal_edgeL:',float(sal_edges_l),'maps_l',float(masks_L),'ED_L',float(E_LOSS))
 
+            #### mutual learning process
+
+            #update m
+            loss_0 = F.binary_cross_entropy(m[0], labels[2].cuda())+ F.binary_cross_entropy(m[1], labels[0].cuda())+F.binary_cross_entropy(m[2], label_batch)
+            loss_0.backward()
+            DE_optimizer.step()
+
+            f, m, e ,PRE_E,mlml_1,mlm_2= D_E(img_batch,img_e)
+#            masks_L ,sal_edges_l,E_LOSS= cal_DLoss(m,e,PRE_E,SAL_E,label_batch,E_Lable,w_s_m.cuda(),w_s_e.cuda(),w_e.cuda(),labels)
+
+            #update m1
+            loss_1 = F.binary_cross_entropy(mlm_1[0], m[0])+ F.binary_cross_entropy(mlm_1[1], m[1])+F.binary_cross_entropy(mlm_1[2], m[2])
+            loss_1.backward()
+            DE_optimizer.step()
+            DE_optimizer.zero_grad()
+            f, m, e ,PRE_E,mlml_1,mlm_2= D_E(img_batch,img_e)
+
+          #  masks_L ,sal_edges_l,E_LOSS= cal_DLoss(m,e,PRE_E,SAL_E,label_batch,E_Lable,w_s_m.cuda(),w_s_e.cuda(),w_e.cuda(),labels)
+
+            #update m2
+            loss_2 = F.binary_cross_entropy(mlm_2[0], m[0])+ F.binary_cross_entropy(mlm_2[1], m[1])+F.binary_cross_entropy(mlm_2[2], m[2])
+            loss_2.backward()
+            DE_optimizer.step()
 
             DE_optimizer.zero_grad()
-            DE_l_1 = 10*masks_L+10*sal_edges_l+10*E_LOSS+MLMloss
+
+            f, m, e ,PRE_E,mlml_1,mlm_2= D_E(img_batch,img_e)
+            DE_l_1 = 10*masks_L+10*sal_edges_l+10*E_LOSS
             DE_l_1.backward()
             DE_optimizer.step()
 
@@ -271,5 +296,5 @@ for epoch in range(1, config.NUM_EPOCHS + 1):
 
     print("test mae", m_eval2)
 
-    with open('results_with_edgeonly.txt', 'a+') as f:
+    with open('results_with_mlm.txt', 'a+') as f:
         f.write(str(epoch) + "   2:" + str(m_eval2) + "\n")
