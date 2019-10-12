@@ -197,7 +197,10 @@ for epoch in range(1, config.NUM_EPOCHS + 1):
 #            masks_L ,sal_edges_l,E_LOSS= cal_DLoss(m,e,PRE_E,SAL_E,label_batch,E_Lable,w_s_m.cuda(),w_s_e.cuda(),w_e.cuda(),labels)
 
             #update m1
-            loss_1 = F.binary_cross_entropy(mlm_1[0], m[0])+ F.binary_cross_entropy(mlm_1[1], m[1])+F.binary_cross_entropy(mlm_1[2], m[2])
+            loss_1 = F.binary_cross_entropy(mlm_1[0], m[0])+ F.binary_cross_entropy(mlm_1[1], m[1])+F.binary_cross_entropy(mlm_1[2], m[2])+\
+                     F.binary_cross_entropy(mlm_1[0], labels[0].cuda())+ F.binary_cross_entropy(mlm_1[1], labels[1].cuda())+\
+                     F.binary_cross_entropy(mlm_1[2], label_batch[2])
+
             loss_1.backward()
             DE_optimizer.step()
             DE_optimizer.zero_grad()
@@ -206,11 +209,24 @@ for epoch in range(1, config.NUM_EPOCHS + 1):
           #  masks_L ,sal_edges_l,E_LOSS= cal_DLoss(m,e,PRE_E,SAL_E,label_batch,E_Lable,w_s_m.cuda(),w_s_e.cuda(),w_e.cuda(),labels)
 
             #update m2
-            loss_2 = F.binary_cross_entropy(mlm_2[0], m[0])+ F.binary_cross_entropy(mlm_2[1], m[1])+F.binary_cross_entropy(mlm_2[2], m[2])
+            loss_2 = F.binary_cross_entropy(mlm_2[0], m[0])+ F.binary_cross_entropy(mlm_2[1], m[1])+F.binary_cross_entropy(mlm_2[2], m[2])+\
+                     F.binary_cross_entropy(mlm_2[0], labels[0].cuda())+ F.binary_cross_entropy(mlm_2[1], labels[1].cuda())\
+                     +F.binary_cross_entropy(mlm_2[2], label_batch[2])
+
             loss_2.backward()
             DE_optimizer.step()
 
             DE_optimizer.zero_grad()
+            f, m, e, PRE_E, mlml_1, mlm_2 = D_E(img_batch, img_e)
+
+            #  masks_L ,sal_edges_l,E_LOSS= cal_DLoss(m,e,PRE_E,SAL_E,label_batch,E_Lable,w_s_m.cuda(),w_s_e.cuda(),w_e.cuda(),labels)
+
+            # update m
+            loss_3 = F.binary_cross_entropy(m[0], mlm_2[0]) + F.binary_cross_entropy(m[1],mlm_2[1]) + F.binary_cross_entropy(m[2], mlml_2[2])+\
+                     F.binary_cross_entropy(m[0], labels[0].cuda())+ F.binary_cross_entropy(m[1], labels[1].cuda())+F.binary_cross_entropy(m[2], label_batch[2])
+
+            loss_3.backward()
+            DE_optimizer.step()
 
             f, m, e ,PRE_E,mlml_1,mlm_2= D_E(img_batch,img_e)
             DE_l_1 = 10*masks_L+10*sal_edges_l+10*E_LOSS
@@ -244,8 +260,8 @@ for epoch in range(1, config.NUM_EPOCHS + 1):
 
 
         if iter_cnt%100 ==0:
-            torch.save(D_E.state_dict(), './checkpoints/edges/D_E20epoch%d.pkl' % epoch)
-            torch.save(U.state_dict(), './checkpoints/edges/U20epoch%d.pkl' % epoch)
+            torch.save(D_E.state_dict(), './checkpoints/mlm/D_E20epoch%d.pkl' % epoch)
+            torch.save(U.state_dict(), './checkpoints/mlm/U20epoch%d.pkl' % epoch)
 
             print('model saved')
 
@@ -256,10 +272,10 @@ for epoch in range(1, config.NUM_EPOCHS + 1):
 
     ##########save model
 
-    torch.save(D_E.state_dict(), './checkpoints/edges/D_E20epoch%d.pkl' % epoch)
-    torch.save(U.state_dict(), './checkpoints/edges/U20epoch%d.pkl'%epoch)
-    torch.save(DE_optimizer.state_dict(),'./checkpoints/edges/DEoptimizer%d.pkl'%epoch)
-    torch.save(U_optimizer.state_dict(), './checkpoints/edges/Uoptimizer%d.pkl'%epoch)
+    torch.save(D_E.state_dict(), './checkpoints/mlm/D_E20epoch%d.pkl' % epoch)
+    torch.save(U.state_dict(), './checkpoints/mlm/U20epoch%d.pkl'%epoch)
+    torch.save(DE_optimizer.state_dict(),'./checkpoints/mlm/DEoptimizer%d.pkl'%epoch)
+    torch.save(U_optimizer.state_dict(), './checkpoints/mlm/Uoptimizer%d.pkl'%epoch)
     #torch.save(RE.state_dict(),'./checkpoints/edges/RE2epoch%d.pkl' % epoch)
     #torch.save(RE_optimizer.state_dict(), './checkpoints/edges/RE2optimizer%d.pkl' % epoch)
     print('model saved')
