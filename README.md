@@ -5,4 +5,4 @@ MLMSNet Code for paper in CVPR2019, 'A Mutual Learning Method for Salient Object
 ### Models:  https://pan.baidu.com/s/1A6zCkQjOHpY6PNBinCX-sw
 
 ### please  refer to mlm_model and train_mlm to use mlm method
-### notes1: MLMBranch==>the feat layers in decoder (self.feat,self.feat1,self.feat2) 
+### 
