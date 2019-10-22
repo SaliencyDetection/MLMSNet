@@ -63,32 +63,30 @@ class FeatLayer(nn.Module):
         #print("side out:", "k",k)
         self.conv1 = nn.Sequential(nn.Conv2d(in_channel,channel,k,1,k//2), nn.ReLU(inplace=True))
         self.conv2_1 = nn.Sequential(nn.Conv2d(channel,channel-NN,k,1,k//2), nn.ReLU(inplace=True),nn.Dropout())
-        self.conv2_2 = nn.Sequential(nn.Conv2d(channel, channel, k, 1, k // 2), nn.ReLU(inplace=True), nn.Dropout())
+        #self.conv2_2 = nn.Sequential(nn.Conv2d(channel, channel, k, 1, k // 2), nn.ReLU(inplace=True), nn.Dropout())
         self.conv_e = nn.Sequential(nn.Conv2d(1+channel,NN,1,1), nn.ReLU(inplace=True))
 
 
         self.o1_s = nn.Conv2d(channel, 1, 1, 1)
 
         self.o1_e=nn.Conv2d(channel, 1, 1, 1)
-        self.o2_e=  nn.Conv2d(channel, 1, 1, 1)
-        self.o2_s = nn.Conv2d(channel, 1, 1, 1)
 
 
     def forward(self, x,f_e):
         x = self.conv1(x)
         side_e = self.conv_e(torch.cat([x,f_e],1))
         y1 = self.conv2_1(x)
-        y2 = self.conv2_2(x)
+        #y2 = self.conv2_2(x)
 
         e_1 = self.o1_e(torch.cat([side_e,y1],1))
         s_1 = self.o1_s(torch.cat([side_e,y1],1))
-        e_2 = self.o2_e(y2)
-        s_2 = self.o2_s(y2)
+        #e_2 = self.o2_e(y2)
+        #s_2 = self.o2_s(y2)
 
 
 
 
-        return (torch.cat([side_e,y1],1),e_1,s_1,e_2,s_2)
+        return (torch.cat([side_e,y1],1),e_1,s_1)
 
 
 
@@ -250,7 +248,7 @@ class DSS(nn.Module):
 
     def forward(self, x1,x2):
         #print(self.e_feat)
-        edges,F,E_1,S_1,E_2,S_2,xx,L_E_1,L_S_2=[],[],[],[],[],[],[],[],[]
+        edges,F,E_1,S_2,xx,E,S=[],[],[],[],[],[],[]
         num = 0
         for k in range(len(self.base)):
             #print(k)
@@ -273,11 +271,11 @@ class DSS(nn.Module):
                 #edges.append(edge)
 
 
-                (f,e_1,s_1,e_2,s_2)= self.feat[num](x1,edge)
+                (f,e_1,s_2)= self.feat[num](x1,edge)
                 F.append(f)
                 E_1.append(e_1)
-                E_2.append(e_2)
-                S_1.append(s_1)
+                #E_2.append(e_2)
+                #S_1.append(s_1)
                 S_2.append(s_2)
 
 
@@ -319,14 +317,16 @@ class DSS(nn.Module):
         for i in range(5):
             edges[i] = self.up[i](edges[i])
 
-            L_E_1.append(self.up1[i](E_1[i]))
-            L_E_1[i] = nn.Sigmoid()(L_E_1[i])
+            E.append(self.up1[i](E_1[i]))
+            E[i] = nn.Sigmoid()(E[i])
 
-            L_S_2.append(self.up2[i](S_2[i]))
-            L_S_2[i] = nn.Sigmoid()(L_S_2[i])
+            S.append(self.up2[i](S_2[i]))
+            S[i] = nn.Sigmoid()(S[i])
 
-        L_S_2.append(self.up2[5](S_2[5]))
-        L_S_2[5] = nn.Sigmoid()(L_S_2[5])
+        S.append(self.up2[5](S_2[5]))
+        S[5] = nn.Sigmoid()(S[5])
+
+        del S_2,E_1
 
 
 
@@ -339,10 +339,10 @@ class DSS(nn.Module):
 
 
 
-        del S_2[5]
 
 
-        return (F,edges,S_1,S_2,E_1,E_2,L_E_1,L_S_2)
+
+        return (F,edges,E,S)
 
 
 
@@ -385,16 +385,16 @@ if __name__ == '__main__':
 
     x = Variable(torch.rand(1,3,256,256))
     x2 = Variable(torch.rand(1,3,256,256))
-    (F,edges,S_1,S_2,E_1,E_2,L_E_1,L_S_2) = net(x,x2)
+    (F,edges,E,S) = net(x,x2)
 
 
     m,e = net2(F)
 
-    for i in S_2:
-        print('S_2',i.shape)
+    for i in S:
+        print('S',i.shape)
 
-    for i in L_S_2:
-        print('L_S_2', i.shape)
+    for i in F:
+        print('F', i.shape)
     #print(net.net.base)
     #print(len(e))
 
