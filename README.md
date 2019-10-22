@@ -3,7 +3,7 @@ MLMSNet Code for paper in CVPR2019, 'A Mutual Learning Method for Salient Object
 
 ### Results: https://pan.baidu.com/s/1jALP-XBARinFCalKj-Aplg 
 
-### please  refer to mlm_model and train_mlm to use mlm method
+### please  refer to mlm_model  to use mlm method
 ### mlm code has revised
 
 
