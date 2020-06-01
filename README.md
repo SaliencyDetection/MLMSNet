@@ -3,8 +3,6 @@ MLMSNet Code for paper in CVPR2019, 'A Mutual Learning Method for Salient Object
 
 ### Results: 链接: https://pan.baidu.com/s/1Jmi5JboversbSgf-8NuyMQ 提取码: 1er1
 
-### please  refer to mlm_model  to use mlm method
-### mlm code has revised
 
 
 
