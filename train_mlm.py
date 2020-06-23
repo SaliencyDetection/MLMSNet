@@ -142,7 +142,7 @@ for epoch in range(1, config.NUM_EPOCHS + 1):
     sum_train_gan = 0
     ##train
 
-    for iter_cnt,(img,img_e,sal_l,sal_e,ed_l,labels,e_labels) in enumerate(train_data):
+    for iter_cnt,(img,img_e,sal_l,sal_e,ed_l,s_ln,w_e,w_s_e,w_s_m,labels,e_labels) in enumerate(train_data):
         D_E.train()
         x = x + 1
 
