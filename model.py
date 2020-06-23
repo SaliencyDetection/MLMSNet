@@ -62,57 +62,6 @@ class FeatLayer(nn.Module):
 
         return (y,y1,y2)
 
-class refine_net(nn.Module):
-    def __init__(self):
-        super(refine_net, self).__init__()
-        self.up=nn.ModuleList()
-        k=1
-        for i in range(4):
-            k =2*k
-            self.up.append(nn.ConvTranspose2d(1,1,k,k))
-        self.res_1_pool = nn.Conv2d(1,1,3,1,dilation=2,padding=2)
-        self.res_1_conv=  nn.Conv2d(3,1,kernel_size=3,padding=1)
-        self.res_2_pool = nn.Conv2d(1,1,3,1,dilation=2,padding=2)
-        self.res_2_conv = nn.Conv2d(3, 1,kernel_size= 3,padding=1)
-        self.res_3_pool = nn.Conv2d(1,1,3,1,dilation=2,padding=2)
-        self.res_3_conv = nn.Conv2d(3, 1, kernel_size=3,padding=1,)
-        self.res_3_pool = nn.Conv2d(1,1,3,1,dilation=2,padding=2)
-        self.res_3_conv = nn.Conv2d(3, 1, kernel_size=3,padding=1)
-        self.res_4_pool = nn.Conv2d(1,1,3,1,dilation=2,padding=2)
-        self.res_4_conv = nn.Conv2d(3, 1, kernel_size=3,padding=1)
-        self.merge = nn.Conv2d(5,1,1,1)
-
-    def forward(self,F_list):
-
-
-        for i in range(4):
-            F_list[3-i]=self.up[i](F_list[3-i])
-            #print('1',F_list[3-i].shape)
-        x0 = F_list[4]
-        x1 = self.res_1_pool(x0)
-        #print(x1.shape)
-
-        x1 = self.res_1_conv(torch.cat([x1,F_list[3],F_list[4]],1))
-        print(x1.shape)
-        x2 = self.res_2_pool(x1)
-        x2 = self.res_2_conv(torch.cat([x2,F_list[2],F_list[4]],1))
-        x3 = self.res_3_pool(x2)
-        x3 = self.res_3_conv(torch.cat([x3,F_list[1],F_list[4]],1))
-        x4 = self.res_4_pool(x3)
-        x4 = self.res_4_conv(torch.cat([x4, F_list[0],F_list[4]], 1))
-
-        xx= nn.Sigmoid()(self.merge(torch.cat([x0,x1,x2,x3,x4],1)))
-
-        return xx
-
-
-
-
-
-
-
-
-
 
 class FeatLayer_ed(nn.Module):
     def __init__(self, in_channel, channel, k):
@@ -451,7 +400,6 @@ if __name__ == '__main__':
     net.train()
     net.cuda()
 
-    re =refine_net().cuda()
 
     net2 = D_U().cuda()
 
@@ -461,9 +409,7 @@ if __name__ == '__main__':
     xe = Variable(torch.rand(1,3,256,256)).cuda()
     (out,y1,y2,edges) = net(x,xe)
     m,e,l= net2(out)
-    xx = re(l)
-    #print(len(e))
-
+  
 
     print(out[0].size())
     print(len(out))
