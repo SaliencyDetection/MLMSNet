@@ -121,9 +121,9 @@ def cal_DLoss(m,e,PRE_E,SAL_E,label_batch,E_Lable,w_s_m,w_s_e,w_e,labels):
     D_sal_edges_loss =0
 
     for i in range(6):
-
+        D_masks_loss =D_masks_loss + F.binary_cross_entropy(m[i], labels[i].cuda())
         if i<3:
-            D_masks_loss =D_masks_loss + F.binary_cross_entropy(m[3+i], labels[i+1].cuda())
+           
 
             D_sal_edges_loss =D_sal_edges_loss+ F.binary_cross_entropy(e[i], SAL_E)
             D_edges_loss = D_edges_loss +F.binary_cross_entropy(PRE_E[i],E_Lable)
@@ -142,7 +142,7 @@ for epoch in range(1, config.NUM_EPOCHS + 1):
     sum_train_gan = 0
     ##train
 
-    for iter_cnt,(img,img_e,sal_l,sal_e,ed_l,s_ln,w_e,w_s_e,w_s_m,labels,e_labels) in enumerate(train_data):
+    for iter_cnt,(img,img_e,sal_l,sal_e,ed_l,labels,e_labels) in enumerate(train_data):
         D_E.train()
         x = x + 1
 
@@ -183,7 +183,7 @@ for epoch in range(1, config.NUM_EPOCHS + 1):
     
                 #masks_L, sal_edges_l, E_LOSS = cal_DLoss(m, e, PRE_E, SAL_E, label_batch, E_Lable, w_s_m.cuda(),
                 #                                         w_s_e.cuda(), w_e.cuda(), labels)
-                print('mlm_1:', float(sal_edges_l), 'maps_l', float(masks_L), 'ED_L', float(E_LOSS))
+                print('mlm_1:', float(L_mlm_1))
     
                 DE_optimizer1.zero_grad()
     
@@ -194,13 +194,13 @@ for epoch in range(1, config.NUM_EPOCHS + 1):
                 m_label = []
                 L_mlm_2=0
                 for iter_mlm,xx in enumerate(m_1):
-                    m_label.append(xx.detach())
-                    L_mlm_2 += F.binary_cross_entropy(m_2[iter_mlm], m_label[iter_mlm])
+                    if iter_mlm<3:
+                        m_label.append(xx.detach())
+                        L_mlm_2 += F.binary_cross_entropy(m_2[iter_mlm], m_label[iter_mlm])+F.binary_cross_entropy(m_2[iter_mlm], labels[iter_mlm])
     
     
-                #masks_L, sal_edges_l, E_LOSS = cal_DLoss(m, e, PRE_E, SAL_E, label_batch, E_Lable, w_s_m.cuda(),
-                #                                         w_s_e.cuda(), w_e.cuda(), labels)
-                print('mlm_1:', float(sal_edges_l), 'maps_l', float(masks_L), 'ED_L', float(E_LOSS))
+         
+                print('mlm_2:', float(L_mlm2))
     
                 DE_optimizer2.zero_grad()
     
@@ -213,12 +213,12 @@ for epoch in range(1, config.NUM_EPOCHS + 1):
                 L_mlm_3=0
                 for iter_mlm,xx in enumerate(m_2):
                     m_label.append(xx.detach())
-                    L_mlm_3 += F.binary_cross_entropy(m[iter_mlm], m_label[iter_mlm])
+                    L_mlm_3 += F.binary_cross_entropy(m[iter_mlm], m_label[iter_mlm])+F.binary_cross_entropy(m[iter_mlm], labels[iter_mlm])
     
     
                 #masks_L, sal_edges_l, E_LOSS = cal_DLoss(m, e, PRE_E, SAL_E, label_batch, E_Lable, w_s_m.cuda(),
                 #                                         w_s_e.cuda(), w_e.cuda(), labels)
-                print('mlm_1:', float(sal_edges_l), 'maps_l', float(masks_L), 'ED_L', float(E_LOSS))
+                print('mlm_3:', float(L_mlm_3))
     
                 DE_optimizer3.zero_grad()
     
