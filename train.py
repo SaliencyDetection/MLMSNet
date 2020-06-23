@@ -112,9 +112,9 @@ def cal_DLoss(m,e,PRE_E,SAL_E,label_batch,E_Lable,w_s_m,w_s_e,w_e,labels):
     D_sal_edges_loss =0
 
     for i in range(6):
-
+        D_masks_loss =D_masks_loss + F.binary_cross_entropy(m[i], labels[i].cuda())
         if i<3:
-            D_masks_loss =D_masks_loss + F.binary_cross_entropy(m[3+i], labels[i+1].cuda())
+            
 
             D_sal_edges_loss =D_sal_edges_loss+ F.binary_cross_entropy(e[i], SAL_E)
             D_edges_loss = D_edges_loss +F.binary_cross_entropy(PRE_E[i],E_Lable)
