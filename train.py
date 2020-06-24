@@ -7,8 +7,8 @@ def process_data_dir(data_dir):
     files = os.listdir(data_dir)
     files = map(lambda x: os.path.join(data_dir, x), files)
     return sorted(files)
-TR_sal_dirs = [   #("/home/archer/Downloads/datasets/DUTS/DUT-train/DUT-train-Image",
-     #"/home/archer/Downloads/datasets/DUTS/DUT-train/DUT-train-Mask"),
+TR_sal_dirs = [   ("/home/archer/Downloads/datasets/DUTS/DUT-train/DUT-train-Image",
+     "/home/archer/Downloads/datasets/DUTS/DUT-train/DUT-train-Mask"),
         )
                 ]
 TR_ed_dir = [("./images/train",
