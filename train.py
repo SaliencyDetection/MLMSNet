@@ -242,7 +242,11 @@ for epoch in range(1, config.NUM_EPOCHS + 1):
     torch.save(U.state_dict(), './checkpoints/edges/U5epoch%d.pkl'%epoch)
     torch.save(DE_optimizer.state_dict(),'./checkpoints/edges/DEoptimizer%d.pkl'%epoch)
     torch.save(U_optimizer.state_dict(), './checkpoints/edges/Uoptimizer%d.pkl'%epoch)
-    print('model saved')
+    
+    DE_optimizer.param_groups[0]['lr'] = 0.95 * model.optimizers[0].param_groups[0]['lr']
+    U_optimizer.param_groups[0]['lr'] = 0.95 * model.optimizers[1].param_groups[0]['lr']
+
+    print('model saved, lr updated')
 
     eval1 = 0
     eval2 = 0
